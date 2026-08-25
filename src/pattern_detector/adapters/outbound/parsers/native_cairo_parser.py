@@ -84,6 +84,7 @@ class NativeCairoParserAdapter(ParserPort):
 
         current_storage: CairoStorage | None = None
         storage_brace_depth = 0
+        storage_lines: list[str] = []
 
         current_function: CairoFunction | None = None
         func_brace_depth = 0
@@ -187,18 +188,21 @@ class NativeCairoParserAdapter(ParserPort):
                 # Storage Struct
                 if pending_storage and "struct Storage" in trimmed:
                     pending_storage = False
+                    storage_lines = [raw_line]
                     current_storage = CairoStorage(
                         location=SourceLocation(file_path=file_path, line=line_idx, column=1),
                         raw_text=raw_line,
                     )
                     storage_brace_depth = raw_line.count("{") - raw_line.count("}")
                     if storage_brace_depth <= 0 and "{" in raw_line and "}" in raw_line:
+                        current_storage.raw_text = "\n".join(storage_lines)
                         current_contract.storage = current_storage
                         current_storage = None
                         storage_brace_depth = 0
                     continue
 
                 if current_storage:
+                    storage_lines.append(raw_line)
                     storage_brace_depth += raw_line.count("{") - raw_line.count("}")
                     if ":" in trimmed and not trimmed.startswith("//"):
                         f_part = trimmed.rstrip(",").rstrip(";").strip()
@@ -213,6 +217,7 @@ class NativeCairoParserAdapter(ParserPort):
                                 current_storage.has_vec = True
 
                     if storage_brace_depth <= 0:
+                        current_storage.raw_text = "\n".join(storage_lines)
                         current_contract.storage = current_storage
                         current_storage = None
                         storage_brace_depth = 0
@@ -334,14 +339,45 @@ class NativeCairoParserAdapter(ParserPort):
                 if fn_m:
                     f_vis = (fn_m.group("vis") or "").strip() or "private"
                     f_name = fn_m.group("name")
+
+                    # Parse parameters
+                    rest = trimmed[fn_m.end():]
+                    depth = 1
+                    i = 0
+                    while i < len(rest) and depth > 0:
+                        if rest[i] == "(":
+                            depth += 1
+                        elif rest[i] == ")":
+                            depth -= 1
+                        i += 1
+
+                    params_str = rest[:i-1] if i > 0 else ""
+                    params = [p.strip() for p in _split_top_level_commas(params_str) if p.strip()]
+
                     current_function = CairoFunction(
                         name=f_name,
                         visibility=f_vis,
+                        is_external=pending_external,
+                        is_l1_handler=pending_l1_handler,
+                        is_constructor=pending_constructor,
+                        parameters=params,
                         location=SourceLocation(file_path=file_path, line=line_idx, column=1),
                         raw_text=raw_line,
                     )
+                    pending_external = False
+                    pending_l1_handler = False
+                    pending_constructor = False
+
                     current_func_body = [raw_line]
                     func_brace_depth = raw_line.count("{") - raw_line.count("}")
+
+                    if "get_caller_address" in raw_line:
+                        current_function.has_caller_check = True
+                    if "assert!" in raw_line or "assert(" in raw_line:
+                        current_function.has_assert = True
+                    if "self.emit(" in raw_line:
+                        current_function.has_emit = True
+
                     if func_brace_depth <= 0 and "{" in raw_line:
                         current_function.body = "\n".join(current_func_body)
                         file_obj.free_functions.append(current_function)
@@ -353,6 +389,14 @@ class NativeCairoParserAdapter(ParserPort):
             if current_function:
                 current_func_body.append(raw_line)
                 func_brace_depth += raw_line.count("{") - raw_line.count("}")
+
+                if "get_caller_address" in raw_line:
+                    current_function.has_caller_check = True
+                if "assert!" in raw_line or "assert(" in raw_line:
+                    current_function.has_assert = True
+                if "self.emit(" in raw_line:
+                    current_function.has_emit = True
+
                 if func_brace_depth <= 0:
                     current_function.body = "\n".join(current_func_body)
                     file_obj.free_functions.append(current_function)

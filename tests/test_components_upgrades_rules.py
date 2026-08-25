@@ -81,3 +81,20 @@ mod OwnedVault {
 
     assert len(detections) == 1
     assert detections[0].pattern_type == PatternType.OWNABLE_ACCESS_CONTROL_COMPONENT
+
+
+def test_access_control_component_variant() -> None:
+    code = """
+#[starknet::contract]
+mod AccessControlledVault {
+    component!(path: AccessControlComponent, storage: access_control, event: AccessControlEvent);
+}
+"""
+    parser = NativeCairoParserAdapter()
+    model = parser.parse_codebase([("acl.cairo", code)])
+
+    rule = OwnableAccessControlComponentRule()
+    detections = rule.evaluate(model)
+
+    assert len(detections) == 1
+    assert detections[0].pattern_type == PatternType.OWNABLE_ACCESS_CONTROL_COMPONENT

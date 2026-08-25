@@ -137,7 +137,7 @@ class Felt252FieldArithmeticRule(BaseRule):
     def evaluate(self, model: CodeModel) -> list[Detection]:
         detections: list[Detection] = []
         for fn in model.all_functions:
-            if any("felt252" in p for p in fn.parameters) or "felt252" in fn.return_type:
+            if any("felt252" in p for p in fn.parameters) or "felt252" in fn.return_type or "felt252" in fn.raw_text:
                 evidences = [
                     Evidence(
                         rule_code="CAIRO_FELT252_ARITHMETIC",

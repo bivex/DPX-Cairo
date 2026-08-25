@@ -54,7 +54,7 @@ class MissingCallerVerificationHazardRule(BaseRule):
         for fn in model.all_functions:
             is_admin_name = any(kw in fn.name.lower() for kw in ("upgrade", "set_admin", "set_owner", "mint_unlimited", "drain", "set_fee"))
             if is_admin_name and fn.is_external:
-                if not fn.has_caller_check and "get_caller_address" not in fn.body and not fn.has_assert:
+                if not fn.has_caller_check and "get_caller_address" not in fn.body and not fn.has_assert and "assert_only_owner" not in fn.body:
                     evidences = [
                         Evidence(
                             rule_code="HAZARD_MISSING_CALLER_CHECK",
@@ -116,7 +116,7 @@ class L1L2ReentrancyHazardRule(BaseRule):
     def evaluate(self, model: CodeModel) -> list[Detection]:
         detections: list[Detection] = []
         for fn in model.all_functions:
-            if fn.is_l1_handler and self.DISPATCH_BEFORE_WRITE.search(fn.body):
+            if (fn.is_l1_handler or "#[l1_handler]" in fn.raw_text) and self.DISPATCH_BEFORE_WRITE.search(fn.body):
                 evidences = [
                     Evidence(
                         rule_code="HAZARD_L1_L2_REENTRANCY",
